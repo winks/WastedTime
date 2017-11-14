@@ -1,0 +1,9 @@
+[package]
+name = "windoh"
+version = "0.1.0"
+authors = ["Florian Anderiasch <fa@art-core.org>"]
+
+[dependencies]
+time = "0.1.38"
+user32-sys = "0.1.2"
+winapi = "0.2.8"
