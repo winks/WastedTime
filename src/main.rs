@@ -3,6 +3,9 @@ extern crate time;
 extern crate user32;
 extern crate winapi;
 
+#[macro_use]
+extern crate serde_json;
+
 use std::thread;
 use std::time as tm;
 use kernel32::{CloseHandle, OpenProcess, K32GetModuleFileNameExW};
@@ -29,9 +32,9 @@ fn main() {
     loop {
         let current = get_info();
         if current.pid != last.pid {
-            print_end(&current, &last, last_change);
+            print_end(&last, last_change);
             last_change = current.timestamp.to_timespec().sec;
-            out(&current, format!("S"));
+            //out(&current, last_change, "S");
         } else {
             //println!("no change since {}", last_change);
         }
@@ -39,7 +42,7 @@ fn main() {
         thread::sleep(sleep_time);
         
         if count >= max && max > 0 {
-            print_end(&current, &last, last_change);
+            print_end(&last, last_change);
             break;
         }
         last = current;
@@ -55,24 +58,36 @@ struct Result {
     path: String,
 }
 
-fn print_end(current: &Result, last: &Result, last_change: i64) {
-    let diff = current.timestamp.to_timespec().sec - last_change;
-    //last_change = current.timestamp.to_timespec().sec;
+fn print_end(last: &Result, last_change: i64) {
     if last.pid > 0 {
-        out(&last, format!("E {}", diff));
+        out(&last, last_change, "E");
     }
 }
 
-fn out(r: &Result, s: String) {
+fn out(r: &Result, last_change: i64, s: &str) {
+    let diff = r.timestamp.to_timespec().sec - last_change;
     println!(
-        "{}|{}|{}|{}|{}|{}",
+        "#{} {}|{}|{}|{}|{}|{}",
         s,
+        diff,
         r.timestamp.to_timespec().sec,
         r.pid,
         r.class,
         r.path,
         r.title
     );
+    if s == "S" {
+        return;
+    }
+    let out = json!({
+        "time": diff,
+        "timestamp": r.timestamp.to_timespec().sec,
+        "pid": r.pid,
+        "class": r.class,
+        "path": r.path,
+        "title": r.title,
+    });
+    println!("{}", out.to_string());
 }
 
 fn get_info() -> Result {
