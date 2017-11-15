@@ -1,11 +1,16 @@
+extern crate kernel32;
 extern crate time;
 extern crate user32;
 extern crate winapi;
 
 use std::thread;
 use std::time as tm;
+use kernel32::{CloseHandle, OpenProcess, K32GetModuleFileNameExW};
 use user32::{GetForegroundWindow, GetWindowTextW, GetClassNameW};
 use user32::{GetWindowThreadProcessId};
+
+const PROCESS_QUERY_INFORMATION: winapi::DWORD = 0x0400;
+const PROCESS_VM_READ: winapi::DWORD = 0x0010;
 
 fn main() {
     let mut count = 0;
@@ -16,7 +21,8 @@ fn main() {
         timestamp: time::now(),
         title: String::new(),
         class: String::new(),
-        pid: 0
+        pid: 0,
+        path: String::new(),
     };
     let mut last_change = 0;
 
@@ -46,6 +52,7 @@ struct Result {
     title: String,
     class: String,
     pid: winapi::DWORD,
+    path: String,
 }
 
 fn print_end(current: &Result, last: &Result, last_change: i64) {
@@ -58,35 +65,43 @@ fn print_end(current: &Result, last: &Result, last_change: i64) {
 
 fn out(r: &Result, s: String) {
     println!(
-        "{}|{}|{}|{}|{}",
+        "{}|{}|{}|{}|{}|{}",
         s,
         r.timestamp.to_timespec().sec,
         r.pid,
         r.class,
+        r.path,
         r.title
     );
 }
 
 fn get_info() -> Result {
     unsafe {
+        let now = time::now();
         let win = GetForegroundWindow();
-        //let mut len = GetWindowTextLengthW(w);
-        //println!("{:?}", len);
+        let max_len = winapi::minwindef::MAX_PATH as winapi::INT;
+
         let mut title = [0 as winapi::WCHAR; winapi::minwindef::MAX_PATH];
         let mut cls = [0 as winapi::WCHAR; winapi::minwindef::MAX_PATH];
         let mut pid: winapi::DWORD = 0;
-        let _ = GetWindowTextW(win, title.as_mut_ptr(), winapi::minwindef::MAX_PATH as winapi::INT);
-        let _ = GetClassNameW(win, cls.as_mut_ptr(), winapi::minwindef::MAX_PATH as winapi::INT);
+        let _ = GetWindowTextW(win, title.as_mut_ptr(), max_len);
+        let _ = GetClassNameW(win, cls.as_mut_ptr(), max_len);
         let _ = GetWindowThreadProcessId(win, &mut pid as *mut winapi::DWORD);
-        //println!("{:?}", t);
-        //println!("{:?}", w);
-        let now = time::now();
-        //println!("{} {:?} {:?} {} {:?}", now.to_timespec().sec, from_u16(&title), from_u16(&cls), pid, win);
+
+        let op_flags = PROCESS_QUERY_INFORMATION | PROCESS_VM_READ;
+        let ph = OpenProcess(op_flags, 0, pid);
+
+        let mut mod_name = [0 as winapi::WCHAR; winapi::minwindef::MAX_PATH];
+        let _ = K32GetModuleFileNameExW(ph, 0 as winapi::HINSTANCE, mod_name.as_mut_ptr(), max_len as winapi::UINT);
+
+        CloseHandle(ph);
+
         let ret = Result{
             timestamp: now,
             title: from_u16(&title),
             class: from_u16(&cls),
             pid: pid,
+            path: from_u16(&mod_name),
         };
         return ret
     }
