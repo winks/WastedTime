@@ -1,6 +1,7 @@
 extern crate kernel32;
 extern crate regex;
 extern crate time;
+extern crate toml;
 extern crate user32;
 extern crate winapi;
 
@@ -10,6 +11,10 @@ extern crate serde_json;
 use regex::Regex;
 use std::thread;
 use std::time as tm;
+use std::io::Read;
+use std::path::Path;
+use std::fs::File;
+use toml::Value;
 use kernel32::{CloseHandle, OpenProcess, K32GetModuleFileNameExW};
 use user32::{GetForegroundWindow, GetWindowTextW, GetClassNameW};
 use user32::{GetWindowThreadProcessId};
@@ -84,9 +89,9 @@ fn main() {
     let mut last = Result::empty();
     let mut last_change = 0;
 
-    let blacklist = [
-        
-    ];
+    let config_filename = "./config/config.toml".to_string();
+    let cfg = read_config_file(config_filename);
+    let blacklist = parse_toml(&cfg);
 
     loop {
         thread::sleep(sleep_time);
@@ -143,7 +148,7 @@ fn out(r: &Result, last_change: i64, s: &str) {
     println!("{}", out.to_string());
 }
 
-fn get_info(blacklist: &[BlacklistItem]) -> Result {
+fn get_info(blacklist: &Vec<BlacklistItem>) -> Result {
     unsafe {
         let win = GetForegroundWindow();
         let max_len = winapi::minwindef::MAX_PATH as winapi::INT;
@@ -184,4 +189,51 @@ fn from_u16(s: &[u16]) -> String {
   use std::os::windows::ffi::OsStringExt;
   let s2: OsString = OsStringExt::from_wide(&s[..pos]);
   s2.to_string_lossy().to_string()
+}
+
+fn read_config_file(filename: String) -> Value {
+    // check and read config file
+    let path = Path::new(&filename);
+    let mut file = match File::open(&path) {
+        Err(why) => panic!("ERROR: Couldn't open {}: {}", path.display(), &why),
+        Ok(file) => file,
+    };
+
+    let mut contents = String::new();
+    let _ = file.read_to_string(&mut contents);
+
+    contents.parse::<Value>().unwrap()
+}
+
+fn parse_toml(val: &Value) -> Vec<BlacklistItem> {
+    let e = &std::vec::Vec::new();
+    let entries = match val["WastedTime"]["blacklist"].as_array() {
+         Some(s) => s,
+         _ => e,
+    };
+    let mut blacklist = Vec::new();
+    for entry in entries.iter() {
+        let m = match entry.as_array() {
+            Some(s) => s,
+            _ => e,
+        };
+        if m.len() != 3 {
+            continue;
+        }
+        let title = match m[0].as_str() {
+            Some(s) => s,
+            _ => "",
+        };
+        let class = match m[1].as_str() {
+            Some(s) => s,
+            _ => "",
+        };
+        let path = match m[2].as_str() {
+            Some(s) => s,
+            _ => "",
+        };
+        let bl = BlacklistItem::new(title, class, path);
+        blacklist.push(bl);
+    }
+    return blacklist;
 }

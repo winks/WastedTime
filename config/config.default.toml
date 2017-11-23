@@ -1,0 +1,2 @@
+[WastedTime]
+blacklist = [ [ " - My Hidden Program$", "", "" ], ["", "", "SomethingSomething.exe$"] ]
