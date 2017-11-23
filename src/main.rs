@@ -1,4 +1,5 @@
 extern crate kernel32;
+extern crate regex;
 extern crate time;
 extern crate user32;
 extern crate winapi;
@@ -6,6 +7,7 @@ extern crate winapi;
 #[macro_use]
 extern crate serde_json;
 
+use regex::Regex;
 use std::thread;
 use std::time as tm;
 use kernel32::{CloseHandle, OpenProcess, K32GetModuleFileNameExW};
@@ -15,22 +17,83 @@ use user32::{GetWindowThreadProcessId};
 const PROCESS_QUERY_INFORMATION: winapi::DWORD = 0x0400;
 const PROCESS_VM_READ: winapi::DWORD = 0x0010;
 
+#[derive(Debug)]
+struct Result {
+    timestamp: time::Tm,
+    title: String,
+    class: String,
+    pid: winapi::DWORD,
+    path: String,
+}
+
+impl Result {
+    pub fn new(title: String, class: String, path: String, pid: winapi::DWORD) -> Result{
+        Result{
+            timestamp: time::now(),
+            title: title,
+            class: class,
+            pid: pid,
+            path: path,
+        }
+    }
+    pub fn empty() -> Result{
+        Result{
+            timestamp: time::now(),
+            title: String::new(),
+            class: String::new(),
+            pid: 0,
+            path: String::new(),
+        }
+    }
+}
+
+struct BlacklistItem {
+    title: Regex,
+    class: Regex,
+    path: Regex,
+}
+
+impl BlacklistItem {
+    pub fn new(title: &str, class: &str, path: &str) -> BlacklistItem{
+        //println!("#XX {}|{}|{}", title, class, path);
+        let _title = match title {
+            "" => r".",
+            _ => title,
+        };
+        let _class = match class {
+            "" => r".",
+            _ => class,
+        };
+        let _path = match path {
+            "" => r".",
+            _ => path,
+        };
+        BlacklistItem{
+            title: Regex::new(_title).unwrap(),
+            class: Regex::new(_class).unwrap(),
+            path: Regex::new(_path).unwrap(),
+        }
+    }
+}
+
 fn main() {
     let mut count = 0;
     let max = 0;
     let sleep_time = tm::Duration::from_millis(1000);
 
-    let mut last = Result{
-        timestamp: time::now(),
-        title: String::new(),
-        class: String::new(),
-        pid: 0,
-        path: String::new(),
-    };
+    let mut last = Result::empty();
     let mut last_change = 0;
 
+    let blacklist = [
+        
+    ];
+
     loop {
-        let current = get_info();
+        thread::sleep(sleep_time);
+        let current = get_info(&blacklist);
+        if current.pid == 0 {
+            continue;
+        }
         if current.pid != last.pid {
             print_end(&last, last_change);
             last_change = current.timestamp.to_timespec().sec;
@@ -39,23 +102,13 @@ fn main() {
             //println!("no change since {}", last_change);
         }
         count += 1;
-        thread::sleep(sleep_time);
-        
+
         if count >= max && max > 0 {
             print_end(&last, last_change);
             break;
         }
         last = current;
     }
-}
-
-#[derive(Debug)]
-struct Result {
-    timestamp: time::Tm,
-    title: String,
-    class: String,
-    pid: winapi::DWORD,
-    path: String,
 }
 
 fn print_end(last: &Result, last_change: i64) {
@@ -90,9 +143,8 @@ fn out(r: &Result, last_change: i64, s: &str) {
     println!("{}", out.to_string());
 }
 
-fn get_info() -> Result {
+fn get_info(blacklist: &[BlacklistItem]) -> Result {
     unsafe {
-        let now = time::now();
         let win = GetForegroundWindow();
         let max_len = winapi::minwindef::MAX_PATH as winapi::INT;
 
@@ -111,13 +163,16 @@ fn get_info() -> Result {
 
         CloseHandle(ph);
 
-        let ret = Result{
-            timestamp: now,
-            title: from_u16(&title),
-            class: from_u16(&cls),
-            pid: pid,
-            path: from_u16(&mod_name),
-        };
+        let ret = Result::new(from_u16(&title), from_u16(&cls), from_u16(&mod_name), pid);
+        let empty = Result::empty();
+
+        for item in blacklist.iter() {
+            if item.title.is_match(&ret.title) && item.class.is_match(&ret.class) && item.path.is_match(&ret.path) {
+                //println!("# XX BLACKLIST {}", ret.title);
+                return empty;
+            }
+        }
+
         return ret
     }
 }
