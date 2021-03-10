@@ -1,6 +1,8 @@
 [WastedTime]
-# ignorelist format: ["title", "class", "path"]
-ignorelist = [ [ " - My Hidden Program$", "", "" ], ["", "", "SomethingSomething.exe$"] ]
+# ignorelist: if the window matches, it will not be recorded at all
+# ignorelist format: ["title", "class", "path", "name"]
+ignorelist = [ ["", "", "SomethingSomething\\.exe$", ""] ]
 
+# grouplist: if the window matches, only the "name" will be displayed
 # grouplist format: ["title", "class", "path", "name"]
-grouplist = [ [" - Firefox$", "", "", "Firefox"] ]
+grouplist = [ [" Mozilla Firefox$", "", "firefox\\.exe$", "Firefox"] ]

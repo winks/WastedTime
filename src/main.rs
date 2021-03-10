@@ -76,7 +76,7 @@ impl Item {
         };
         let _name = match name {
             "" => String::new(),
-            _ => name,
+            _ => name.to_string(),
         };
         Item{
             title: Regex::new(_title).unwrap(),
@@ -84,41 +84,6 @@ impl Item {
             path: Regex::new(_path).unwrap(),
             name: _name,
         }
-    }
-}
-
-fn main() {
-    let mut count = 0;
-    let max = 0;
-    let sleep_time = tm::Duration::from_millis(1000);
-
-    let mut last = Result::empty();
-    let mut last_change = 0;
-
-    let config_filename = "./config/config.toml".to_string();
-    let cfg = read_config_file(config_filename);
-    let ignorelist = parse_toml(&cfg);
-
-    loop {
-        thread::sleep(sleep_time);
-        let current = get_info(&ignorelist);
-        if current.pid == 0 {
-            continue;
-        }
-        if current.pid != last.pid {
-            print_end(&last, last_change);
-            last_change = current.timestamp.to_timespec().sec;
-            //out(&current, last_change, "S");
-        } else {
-            //println!("no change since {}", last_change);
-        }
-        count += 1;
-
-        if count >= max && max > 0 {
-            print_end(&last, last_change);
-            break;
-        }
-        last = current;
     }
 }
 
@@ -154,7 +119,7 @@ fn out(r: &Result, last_change: i64, s: &str) {
     println!("{}", out.to_string());
 }
 
-fn get_info(ignorelist: &Vec<Item>) -> Result {
+fn get_info(ignorelist: &Vec<Item>, grouplist: &Vec<Item>) -> Result {
     unsafe {
         let win = GetForegroundWindow();
         let max_len = winapi::minwindef::MAX_PATH as winapi::INT;
@@ -183,6 +148,12 @@ fn get_info(ignorelist: &Vec<Item>) -> Result {
                 return empty;
             }
         }
+        for item in grouplist.iter() {
+            if item.title.is_match(&ret.title) && item.class.is_match(&ret.class) && item.path.is_match(&ret.path) {
+                //println!("# XX GROUPLIST {}", ret.title);
+                return Result::new(item.name.clone(), String::new(), from_u16(&mod_name), pid);
+            }
+        }
 
         return ret
     }
@@ -201,7 +172,10 @@ fn read_config_file(filename: String) -> Value {
     // check and read config file
     let path = Path::new(&filename);
     let mut file = match File::open(&path) {
-        Err(why) => panic!("ERROR: Couldn't open {}: {}", path.display(), &why),
+        Err(why) => {
+            println!("ERROR: Couldn't open {}: {}", path.display(), &why);
+            std::process::exit(1)
+        },
         Ok(file) => file,
     };
 
@@ -211,13 +185,31 @@ fn read_config_file(filename: String) -> Value {
     contents.parse::<Value>().unwrap()
 }
 
-fn parse_toml(val: &Value) -> Vec<Item> {
+fn parse_toml(val: &Value, section: &str) -> Vec<Item> {
     let e = &std::vec::Vec::new();
-    let entries = match val["WastedTime"]["ignorelist"].as_array() {
+    let v1 = match val.get("WastedTime") {
+        Some(v) => v,
+        _ => {
+            println!("Config file malformed.");
+            std::process::exit(2)
+        }
+    };
+    let v2 = match v1.get(section) {
+        Some(v) => v,
+        _ => {
+            println!("Config file malformed3.");
+            std::process::exit(3)
+        }
+    };
+    if !v2.is_array() {
+        println!("Config file malformed.");
+        std::process::exit(4)
+    }
+    let entries = match v2.as_array() {
          Some(s) => s,
          _ => e,
     };
-    let mut ignorelist = Vec::new();
+    let mut itemlist = Vec::new();
     for entry in entries.iter() {
         let m = match entry.as_array() {
             Some(s) => s,
@@ -238,9 +230,51 @@ fn parse_toml(val: &Value) -> Vec<Item> {
             Some(s) => s,
             _ => "",
         };
-        let name = "";
+        if m.len() < 4 && section == "grouplist" {
+            continue;
+        }
+        let name = match m[3].as_str() {
+            Some(s) => s,
+            _ => "",
+        };
         let item = Item::new(title, class, path, name);
-        ignorelist.push(item);
+        itemlist.push(item);
     }
-    return ignorelist;
+    return itemlist
+}
+
+fn main() {
+    let mut count = 0;
+    let max = 0;
+    let sleep_time = tm::Duration::from_millis(1000);
+
+    let mut last = Result::empty();
+    let mut last_change = 0;
+
+    let config_filename = "./config/config.toml".to_string();
+    let cfg = read_config_file(config_filename);
+    let ignorelist = parse_toml(&cfg, "ignorelist");
+    let grouplist = parse_toml(&cfg, "grouplist");
+
+    loop {
+        thread::sleep(sleep_time);
+        let current = get_info(&ignorelist, &grouplist);
+        if current.pid == 0 {
+            continue;
+        }
+        if current.pid != last.pid {
+            print_end(&last, last_change);
+            last_change = current.timestamp.to_timespec().sec;
+            //out(&current, last_change, "S");
+        } else {
+            //println!("no change since {}", last_change);
+        }
+        count += 1;
+
+        if count >= max && max > 0 {
+            print_end(&last, last_change);
+            break;
+        }
+        last = current;
+    }
 }
