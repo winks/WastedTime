@@ -52,14 +52,15 @@ impl Result {
     }
 }
 
-struct BlacklistItem {
+struct Item {
     title: Regex,
     class: Regex,
     path: Regex,
+    name: String,
 }
 
-impl BlacklistItem {
-    pub fn new(title: &str, class: &str, path: &str) -> BlacklistItem{
+impl Item {
+    pub fn new(title: &str, class: &str, path: &str, name: &str) -> Item{
         //println!("#XX {}|{}|{}", title, class, path);
         let _title = match title {
             "" => r".",
@@ -73,10 +74,15 @@ impl BlacklistItem {
             "" => r".",
             _ => path,
         };
-        BlacklistItem{
+        let _name = match name {
+            "" => String::new(),
+            _ => name,
+        };
+        Item{
             title: Regex::new(_title).unwrap(),
             class: Regex::new(_class).unwrap(),
             path: Regex::new(_path).unwrap(),
+            name: _name,
         }
     }
 }
@@ -91,11 +97,11 @@ fn main() {
 
     let config_filename = "./config/config.toml".to_string();
     let cfg = read_config_file(config_filename);
-    let blacklist = parse_toml(&cfg);
+    let ignorelist = parse_toml(&cfg);
 
     loop {
         thread::sleep(sleep_time);
-        let current = get_info(&blacklist);
+        let current = get_info(&ignorelist);
         if current.pid == 0 {
             continue;
         }
@@ -148,7 +154,7 @@ fn out(r: &Result, last_change: i64, s: &str) {
     println!("{}", out.to_string());
 }
 
-fn get_info(blacklist: &Vec<BlacklistItem>) -> Result {
+fn get_info(ignorelist: &Vec<Item>) -> Result {
     unsafe {
         let win = GetForegroundWindow();
         let max_len = winapi::minwindef::MAX_PATH as winapi::INT;
@@ -171,9 +177,9 @@ fn get_info(blacklist: &Vec<BlacklistItem>) -> Result {
         let ret = Result::new(from_u16(&title), from_u16(&cls), from_u16(&mod_name), pid);
         let empty = Result::empty();
 
-        for item in blacklist.iter() {
+        for item in ignorelist.iter() {
             if item.title.is_match(&ret.title) && item.class.is_match(&ret.class) && item.path.is_match(&ret.path) {
-                //println!("# XX BLACKLIST {}", ret.title);
+                //println!("# XX IGNORELIST {}", ret.title);
                 return empty;
             }
         }
@@ -205,19 +211,19 @@ fn read_config_file(filename: String) -> Value {
     contents.parse::<Value>().unwrap()
 }
 
-fn parse_toml(val: &Value) -> Vec<BlacklistItem> {
+fn parse_toml(val: &Value) -> Vec<Item> {
     let e = &std::vec::Vec::new();
-    let entries = match val["WastedTime"]["blacklist"].as_array() {
+    let entries = match val["WastedTime"]["ignorelist"].as_array() {
          Some(s) => s,
          _ => e,
     };
-    let mut blacklist = Vec::new();
+    let mut ignorelist = Vec::new();
     for entry in entries.iter() {
         let m = match entry.as_array() {
             Some(s) => s,
             _ => e,
         };
-        if m.len() != 3 {
+        if m.len() < 3 {
             continue;
         }
         let title = match m[0].as_str() {
@@ -232,8 +238,9 @@ fn parse_toml(val: &Value) -> Vec<BlacklistItem> {
             Some(s) => s,
             _ => "",
         };
-        let bl = BlacklistItem::new(title, class, path);
-        blacklist.push(bl);
+        let name = "";
+        let item = Item::new(title, class, path, name);
+        ignorelist.push(item);
     }
-    return blacklist;
+    return ignorelist;
 }
