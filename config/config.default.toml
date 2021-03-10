@@ -1,2 +1,6 @@
 [WastedTime]
-blacklist = [ [ " - My Hidden Program$", "", "" ], ["", "", "SomethingSomething.exe$"] ]
+# ignorelist format: ["title", "class", "path"]
+ignorelist = [ [ " - My Hidden Program$", "", "" ], ["", "", "SomethingSomething.exe$"] ]
+
+# grouplist format: ["title", "class", "path", "name"]
+grouplist = [ [" - Firefox$", "", "", "Firefox"] ]
