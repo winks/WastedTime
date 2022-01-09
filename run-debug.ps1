@@ -1,1 +1,1 @@
-.\target\debug\WastedTime.exe | Tee-Object -Append -FilePath logs/$(Get-Date -UFormat "+%Y-%m-%dT%H-%M-%S").log
+.\target\debug\WastedTime.exe | Tee-Object -Append -FilePath logs-dev/$(Get-Date -UFormat "+%Y-%m-%dT%H-%M-%S").log
