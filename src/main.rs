@@ -87,24 +87,30 @@ impl Item {
     }
 }
 
-fn print_end(last: &Result, last_change: i64) {
+fn print_start(current: &Result, last_change: i64, is_debug: bool) {
+	out(&current, last_change, "S", is_debug);
+}
+
+fn print_end(last: &Result, last_change: i64, is_debug: bool) {
     if last.pid > 0 {
-        out(&last, last_change, "E");
+        out(&last, last_change, "E", is_debug);
     }
 }
 
-fn out(r: &Result, last_change: i64, s: &str) {
+fn out(r: &Result, last_change: i64, s: &str, is_debug: bool) {
     let diff = r.timestamp.to_timespec().sec - last_change;
-    println!(
-        "#{} {}|{}|{}|{}|{}|{}",
-        s,
-        diff,
-        r.timestamp.to_timespec().sec,
-        r.pid,
-        r.class,
-        r.path,
-        r.title
-    );
+	if is_debug {
+		println!(
+		    "#{} {}|{}|{}|{}|{}|{}",
+		    s,
+		    diff,
+		    r.timestamp.to_timespec().sec,
+		    r.pid,
+		    r.class,
+		    r.path,
+		    r.title
+		);
+	}
     if s == "S" {
         return;
     }
@@ -119,7 +125,7 @@ fn out(r: &Result, last_change: i64, s: &str) {
     println!("{}", out.to_string());
 }
 
-fn get_info(ignorelist: &Vec<Item>, grouplist: &Vec<Item>) -> Result {
+fn get_info(ignorelist: &Vec<Item>, grouplist: &Vec<Item>, is_debug: bool) -> Result {
     unsafe {
         let win = GetForegroundWindow();
         let max_len = winapi::minwindef::MAX_PATH as winapi::INT;
@@ -144,13 +150,17 @@ fn get_info(ignorelist: &Vec<Item>, grouplist: &Vec<Item>) -> Result {
 
         for item in ignorelist.iter() {
             if item.title.is_match(&ret.title) && item.class.is_match(&ret.class) && item.path.is_match(&ret.path) {
-                //println!("# XX IGNORELIST {}", ret.title);
+				if is_debug {
+					println!("#X IGNORELIST {}", ret.title);
+				}
                 return empty;
             }
         }
         for item in grouplist.iter() {
             if item.title.is_match(&ret.title) && item.class.is_match(&ret.class) && item.path.is_match(&ret.path) {
-                //println!("# XX GROUPLIST {}", ret.title);
+				if is_debug {
+					println!("#X GROUPLIST {}", ret.title);
+				}
                 return Result::new(item.name.clone(), String::new(), from_u16(&mod_name), pid);
             }
         }
@@ -184,6 +194,32 @@ fn read_config_file(filename: String) -> Value {
 
     contents.parse::<Value>().unwrap()
 }
+
+fn parse_bool(val: &Value, key: &str) -> bool {
+    let v1 = match val.get("WastedTime") {
+        Some(v) => v,
+        _ => {
+            println!("Config file malformed.");
+            std::process::exit(2)
+        }
+    };
+    let v2 = match v1.get(key) {
+        Some(v) => v,
+        _ => {
+            return false
+        }
+    };
+	match v2.as_str() {
+		Some(s) => {
+			match s.to_lowercase().as_str() {
+				"true" => true,
+				_ => false
+			}
+		},
+		None => false
+	}
+}
+
 
 fn parse_toml(val: &Value, section: &str) -> Vec<Item> {
     let e = &std::vec::Vec::new();
@@ -255,24 +291,25 @@ fn main() {
     let cfg = read_config_file(config_filename);
     let ignorelist = parse_toml(&cfg, "ignorelist");
     let grouplist = parse_toml(&cfg, "grouplist");
+	let is_debug = parse_bool(&cfg,"debug");
 
     loop {
         thread::sleep(sleep_time);
-        let current = get_info(&ignorelist, &grouplist);
+        let current = get_info(&ignorelist, &grouplist, is_debug);
         if current.pid == 0 {
             continue;
         }
         if current.pid != last.pid {
-            print_end(&last, last_change);
+            print_end(&last, last_change, is_debug);
             last_change = current.timestamp.to_timespec().sec;
-            //out(&current, last_change, "S");
+            print_start(&current, last_change, is_debug);
         } else {
             //println!("no change since {}", last_change);
         }
         count += 1;
 
         if count >= max && max > 0 {
-            print_end(&last, last_change);
+            print_end(&last, last_change, is_debug);
             break;
         }
         last = current;

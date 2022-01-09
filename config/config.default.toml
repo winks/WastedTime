@@ -6,3 +6,5 @@ ignorelist = [ ["", "", "SomethingSomething\\.exe$", ""] ]
 # grouplist: if the window matches, only the "name" will be displayed
 # grouplist format: ["title", "class", "path", "name"]
 grouplist = [ [" Mozilla Firefox$", "", "firefox\\.exe$", "Firefox"] ]
+
+debug = "false"
