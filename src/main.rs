@@ -1,5 +1,7 @@
 extern crate kernel32;
+extern crate rand;
 extern crate regex;
+extern crate rusqlite;
 extern crate time;
 extern crate toml;
 extern crate user32;
@@ -21,6 +23,8 @@ use kernel32::{CloseHandle, OpenProcess, K32GetModuleFileNameExW};
 use user32::{GetForegroundWindow, GetWindowTextW, GetClassNameW};
 #[cfg(target_family = "windows")]
 use user32::{GetWindowThreadProcessId};
+use rusqlite::{params, Connection};
+use rand::Rng;
 
 const PROCESS_QUERY_INFORMATION: u32 = 0x0400;
 const PROCESS_VM_READ: u32 = 0x0010;
@@ -130,7 +134,9 @@ fn out(r: &Result, last_change: i64, s: &str, is_debug: bool) {
 
 #[cfg(not(target_family = "windows"))]
 fn get_info(ignorelist: &Vec<Item>, grouplist: &Vec<Item>, is_debug: bool) -> Result {
-    Result::new(String::new(), String::new(), String::new(), 0)
+    let mut rnd = rand::thread_rng();
+    let pid = &rnd.gen_range(0..10);
+    Result::new("Title".to_string(), "Class".to_string(), "Path".to_string(), *pid)
 }
 
 #[cfg(target_family = "windows")]
@@ -308,14 +314,25 @@ fn main() {
     let grouplist = parse_toml(&cfg, "grouplist");
 	let is_debug = parse_bool(&cfg,"debug");
 
+    //let conn = Connection::open_in_memory()?;
+    let conn = Connection::open("./wasted.sqlite").unwrap();
+
     loop {
         thread::sleep(sleep_time);
         let current = get_info(&ignorelist, &grouplist, is_debug);
         if current.pid == 0 {
+            println!("#FOO");
             continue;
         }
         if current.pid != last.pid {
             print_end(&last, last_change, is_debug);
+            let diff = last.timestamp.to_timespec().sec - last_change;
+            conn.execute(
+                "INSERT INTO log (time, timestamp, pid, class, path, title)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![diff, last.timestamp.to_timespec().sec, last.pid,
+                        last.class, last.path, last.title],
+            ).unwrap();
             last_change = current.timestamp.to_timespec().sec;
             print_start(&current, last_change, is_debug);
         } else {
