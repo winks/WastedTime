@@ -15,24 +15,27 @@ use std::io::Read;
 use std::path::Path;
 use std::fs::File;
 use toml::Value;
+#[cfg(target_family = "windows")]
 use kernel32::{CloseHandle, OpenProcess, K32GetModuleFileNameExW};
+#[cfg(target_family = "windows")]
 use user32::{GetForegroundWindow, GetWindowTextW, GetClassNameW};
+#[cfg(target_family = "windows")]
 use user32::{GetWindowThreadProcessId};
 
-const PROCESS_QUERY_INFORMATION: winapi::DWORD = 0x0400;
-const PROCESS_VM_READ: winapi::DWORD = 0x0010;
+const PROCESS_QUERY_INFORMATION: u32 = 0x0400;
+const PROCESS_VM_READ: u32 = 0x0010;
 
 #[derive(Debug)]
 struct Result {
     timestamp: time::Tm,
     title: String,
     class: String,
-    pid: winapi::DWORD,
+    pid: u32,
     path: String,
 }
 
 impl Result {
-    pub fn new(title: String, class: String, path: String, pid: winapi::DWORD) -> Result{
+    pub fn new(title: String, class: String, path: String, pid: u32) -> Result{
         Result{
             timestamp: time::now(),
             title: title,
@@ -125,6 +128,12 @@ fn out(r: &Result, last_change: i64, s: &str, is_debug: bool) {
     println!("{}", out.to_string());
 }
 
+#[cfg(not(target_family = "windows"))]
+fn get_info(ignorelist: &Vec<Item>, grouplist: &Vec<Item>, is_debug: bool) -> Result {
+    Result::new(String::new(), String::new(), String::new(), 0)
+}
+
+#[cfg(target_family = "windows")]
 fn get_info(ignorelist: &Vec<Item>, grouplist: &Vec<Item>, is_debug: bool) -> Result {
     unsafe {
         let win = GetForegroundWindow();
@@ -169,6 +178,12 @@ fn get_info(ignorelist: &Vec<Item>, grouplist: &Vec<Item>, is_debug: bool) -> Re
     }
 }
 
+#[cfg(not(target_family = "windows"))]
+fn from_u16(s: &[u16]) -> String {
+    "NYI".to_string()
+}
+
+#[cfg(target_family = "windows")]
 fn from_u16(s: &[u16]) -> String {
   // panic if there's no null terminator
   let pos = s.iter().position(|a| a == &0u16).unwrap();
