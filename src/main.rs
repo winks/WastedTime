@@ -312,7 +312,7 @@ fn main() {
     let cfg = read_config_file(config_filename);
     let ignorelist = parse_toml(&cfg, "ignorelist");
     let grouplist = parse_toml(&cfg, "grouplist");
-	let is_debug = parse_bool(&cfg,"debug");
+	let is_debug = parse_bool(&cfg, "debug");
 
     //let conn = Connection::open_in_memory()?;
     let conn = Connection::open("./wasted.sqlite").unwrap();
