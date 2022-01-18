@@ -1,3 +1,4 @@
+extern crate directories;
 extern crate kernel32;
 extern crate rand;
 extern crate regex;
@@ -10,21 +11,21 @@ extern crate winapi;
 #[macro_use]
 extern crate serde_json;
 
+use directories::ProjectDirs;
+use rand::Rng;
 use regex::Regex;
+use rusqlite::{params, Connection};
+use std::fs::{File, create_dir_all};
+use std::io::Read;
+use std::path::{Path, PathBuf};
 use std::thread;
 use std::time as tm;
-use std::io::Read;
-use std::path::Path;
-use std::fs::File;
 use toml::Value;
+
 #[cfg(target_family = "windows")]
 use kernel32::{CloseHandle, OpenProcess, K32GetModuleFileNameExW};
 #[cfg(target_family = "windows")]
-use user32::{GetForegroundWindow, GetWindowTextW, GetClassNameW};
-#[cfg(target_family = "windows")]
-use user32::{GetWindowThreadProcessId};
-use rusqlite::{params, Connection};
-use rand::Rng;
+use user32::{GetForegroundWindow, GetWindowTextW, GetClassNameW, GetWindowThreadProcessId};
 
 const PROCESS_QUERY_INFORMATION: u32 = 0x0400;
 const PROCESS_VM_READ: u32 = 0x0010;
@@ -94,30 +95,20 @@ impl Item {
     }
 }
 
-fn print_start(current: &Result, last_change: i64, is_debug: bool) {
-	out(&current, last_change, "S", is_debug);
-}
-
-fn print_end(last: &Result, last_change: i64, is_debug: bool) {
-    if last.pid > 0 {
-        out(&last, last_change, "E", is_debug);
-    }
-}
-
 fn out(r: &Result, last_change: i64, s: &str, is_debug: bool) {
     let diff = r.timestamp.to_timespec().sec - last_change;
-	if is_debug {
-		println!(
-		    "#{} {}|{}|{}|{}|{}|{}",
-		    s,
-		    diff,
-		    r.timestamp.to_timespec().sec,
-		    r.pid,
-		    r.class,
-		    r.path,
-		    r.title
-		);
-	}
+    if is_debug {
+        println!(
+            "#{} {}|{}|{}|{}|{}|{}",
+            s,
+            diff,
+            r.timestamp.to_timespec().sec,
+            r.pid,
+            r.class,
+            r.path,
+            r.title
+        );
+    }
     if s == "S" {
         return;
     }
@@ -165,17 +156,17 @@ fn get_info(ignorelist: &Vec<Item>, grouplist: &Vec<Item>, is_debug: bool) -> Re
 
         for item in ignorelist.iter() {
             if item.title.is_match(&ret.title) && item.class.is_match(&ret.class) && item.path.is_match(&ret.path) {
-				if is_debug {
-					println!("#X IGNORELIST {}", ret.title);
-				}
+                if is_debug {
+                    println!("#X IGNORELIST {}", ret.title);
+                }
                 return empty;
             }
         }
         for item in grouplist.iter() {
             if item.title.is_match(&ret.title) && item.class.is_match(&ret.class) && item.path.is_match(&ret.path) {
-				if is_debug {
-					println!("#X GROUPLIST {}", ret.title);
-				}
+                if is_debug {
+                    println!("#X GROUPLIST {}", ret.title);
+                }
                 return Result::new(item.name.clone(), String::new(), from_u16(&mod_name), pid);
             }
         }
@@ -191,17 +182,15 @@ fn from_u16(s: &[u16]) -> String {
 
 #[cfg(target_family = "windows")]
 fn from_u16(s: &[u16]) -> String {
-  // panic if there's no null terminator
-  let pos = s.iter().position(|a| a == &0u16).unwrap();
-  use std::ffi::OsString;
-  use std::os::windows::ffi::OsStringExt;
-  let s2: OsString = OsStringExt::from_wide(&s[..pos]);
-  s2.to_string_lossy().to_string()
+    // panic if there's no null terminator
+    let pos = s.iter().position(|a| a == &0u16).unwrap();
+    use std::ffi::OsString;
+    use std::os::windows::ffi::OsStringExt;
+    let s2: OsString = OsStringExt::from_wide(&s[..pos]);
+    s2.to_string_lossy().to_string()
 }
 
-fn read_config_file(filename: String) -> Value {
-    // check and read config file
-    let path = Path::new(&filename);
+fn read_config_file(path: &Path) -> Value {
     let mut file = match File::open(&path) {
         Err(why) => {
             println!("ERROR: Couldn't open {}: {}", path.display(), &why);
@@ -230,17 +219,16 @@ fn parse_bool(val: &Value, key: &str) -> bool {
             return false
         }
     };
-	match v2.as_str() {
-		Some(s) => {
-			match s.to_lowercase().as_str() {
-				"true" => true,
-				_ => false
-			}
-		},
-		None => false
-	}
+    match v2.as_str() {
+        Some(s) => {
+            match s.to_lowercase().as_str() {
+                "true" => true,
+                _ => false
+            }
+        },
+        None => false
+    }
 }
-
 
 fn parse_toml(val: &Value, section: &str) -> Vec<Item> {
     let e = &std::vec::Vec::new();
@@ -308,24 +296,44 @@ fn main() {
     let mut last = Result::empty();
     let mut last_change = 0;
 
-    let config_filename = "./config/config.toml".to_string();
-    let cfg = read_config_file(config_filename);
+    let cfg_path : PathBuf;
+    let db_path : PathBuf;
+    if let Some(proj_dirs) = ProjectDirs::from("org", "art-core",  "WastedTime") {
+        let mut config_filename = "WastedTime.toml";
+        let mut db_filename     = "WastedTime.sqlite";
+        if cfg!(debug_assertions) {
+            config_filename = "WastedTime.dev.toml";
+            db_filename     = "WastedTime.dev.sqlite";
+        }
+
+        let config_dir = proj_dirs.config_dir();
+        create_dir_all(config_dir).unwrap();
+        cfg_path = config_dir.join(config_filename);
+
+        let data_dir = proj_dirs.data_dir();
+        create_dir_all(data_dir).unwrap();
+        db_path = data_dir.join(db_filename);
+    } else {
+        panic!("foo");
+    }
+
+    let cfg = read_config_file(&cfg_path);
     let ignorelist = parse_toml(&cfg, "ignorelist");
     let grouplist = parse_toml(&cfg, "grouplist");
-	let is_debug = parse_bool(&cfg, "debug");
+    let is_debug = parse_bool(&cfg, "debug");
 
-    //let conn = Connection::open_in_memory()?;
-    let conn = Connection::open("./wasted.sqlite").unwrap();
+    let conn = Connection::open(db_path).unwrap();
 
     loop {
         thread::sleep(sleep_time);
         let current = get_info(&ignorelist, &grouplist, is_debug);
         if current.pid == 0 {
-            println!("#FOO");
             continue;
         }
         if current.pid != last.pid {
-            print_end(&last, last_change, is_debug);
+            if last.pid > 0 {
+                out(&last, last_change, "E", is_debug);
+            }
             let diff = last.timestamp.to_timespec().sec - last_change;
             conn.execute(
                 "INSERT INTO log (time, timestamp, pid, class, path, title)
@@ -334,14 +342,12 @@ fn main() {
                         last.class, last.path, last.title],
             ).unwrap();
             last_change = current.timestamp.to_timespec().sec;
-            print_start(&current, last_change, is_debug);
-        } else {
-            //println!("no change since {}", last_change);
+            out(&current, last_change, "S", is_debug);
         }
         count += 1;
 
         if count >= max && max > 0 {
-            print_end(&last, last_change, is_debug);
+            out(&last, last_change, "E", is_debug);
             break;
         }
         last = current;
