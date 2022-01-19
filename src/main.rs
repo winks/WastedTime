@@ -1,3 +1,4 @@
+extern crate ctrlc;
 extern crate directories;
 extern crate kernel32;
 extern crate rand;
@@ -12,16 +13,19 @@ extern crate winapi;
 extern crate serde_json;
 
 use directories::ProjectDirs;
-use rand::Rng;
 use regex::Regex;
 use rusqlite::{params, Connection};
 use std::fs::{File, create_dir_all};
 use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::thread;
 use std::time as tm;
 use toml::Value;
 
+#[cfg(not(target_family = "windows"))]
+use rand::Rng;
 #[cfg(target_family = "windows")]
 use kernel32::{CloseHandle, OpenProcess, K32GetModuleFileNameExW};
 #[cfg(target_family = "windows")]
@@ -289,6 +293,12 @@ fn parse_toml(val: &Value, section: &str) -> Vec<Item> {
 }
 
 fn main() {
+    let running = Arc::new(AtomicBool::new(true));
+    let run = running.clone();
+    ctrlc::set_handler(move || {
+        run.store(false, Ordering::SeqCst);
+    }).expect("Error setting Ctrl-C handler");
+
     let mut count = 0;
     let max = 0;
     let sleep_time = tm::Duration::from_millis(1000);
@@ -324,7 +334,7 @@ fn main() {
 
     let conn = Connection::open(db_path).unwrap();
 
-    loop {
+    while running.load(Ordering::SeqCst) {
         thread::sleep(sleep_time);
         let current = get_info(&ignorelist, &grouplist, is_debug);
         if current.pid == 0 {
@@ -352,4 +362,12 @@ fn main() {
         }
         last = current;
     }
+    println!("The end");
+    let diff = last.timestamp.to_timespec().sec - last_change;
+    conn.execute(
+        "INSERT INTO log (time, timestamp, pid, class, path, title)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![diff, last.timestamp.to_timespec().sec, last.pid,
+                last.class, last.path, last.title],
+    ).unwrap();
 }
